@@ -1,0 +1,474 @@
+---
+title: "Thesis R code Nikki Trebels"
+output: html_document
+date: "2023-02-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+```{MASTER THESIS dataset, echo=FALSE}
+
+whole_crime_dataset <- read.csv("/Users/nikkitrebels/School/Tilburg University/MSc Data & Society/Year 1/Semester 2/Block 4/THESIS/THESIS DATASET/NYPD_Complaint_Data_Historic.csv", stringsAsFactors = FALSE)
+
+# UNI PC
+
+whole_crime_dataset <- read.csv("C:/Users/u492540/Downloads/NYPD_Complaint_Data_Historic.csv", stringsAsFactors = FALSE)
+
+
+View(whole_crime_dataset)
+
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("caret")
+install.packages("randomForest") #RF
+install.packages("nnet") #MLR
+install.packages("MLmetrics") #evaluation metrics
+install.packages("lubridate") #WEEKDAY
+install.packages("hydroTSM") #SEASON
+install.packages("performanceEstimation") #oversampling
+install.packages("xgboost")
+install.packages("neuralnet")
+
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(randomForest) #RF
+library(nnet) #MLR
+library(MLmetrics) #evaluation metrics
+library(lubridate) #WEEKDAY
+library(hydroTSM) #SEASON
+library(performanceEstimation) #oversampling
+
+ggplot() +
+  geom_bar(data = whole_crime_dataset, mapping = aes(y = OFNS_DESC))
+
+#crime occurrence per borough
+ggplot() +
+  geom_bar(data = whole_crime_dataset, mapping = aes(x = BORO_NM))
+#most crime in brooklyn
+
+number_of_crimes <- length(unique(whole_crime_dataset$OFNS_DESC))
+number_of_crimes #69 types of crimes
+
+#plot crime per month!
+
+unique(whole_crime_dataset$OFNS_DESC) # types of crime
+table(whole_crime_dataset$OFNS_DESC)
+
+#data cleaning
+
+sum(whole_crime_dataset$OFNS_DES == "") #2880
+sum(whole_crime_dataset$BORO_NM == "") #0
+sum(whole_crime_dataset$PREM_TYP_DESC == "") #4689
+sum(whole_crime_dataset$CMPLNT_FR_DT == "") #65
+sum(whole_crime_dataset$CMPLNT_FR_TM == "") #0
+
+#delete the empty classes in variables:
+
+whole_crime_dataset <- subset(whole_crime_dataset, OFNS_DESC != "")
+sum(whole_crime_dataset$OFNS_DESC == "") #0
+
+whole_crime_dataset <- subset(whole_crime_dataset, PREM_TYP_DESC != "")
+sum(whole_crime_dataset$PREM_TYP_DESC == "") #0
+
+whole_crime_dataset <- subset(whole_crime_dataset, CMPLNT_FR_DT != "")
+sum(whole_crime_dataset$CMPLNT_FR_DT == "") #0
+
+#merge messy classes together in crimes committed:
+#DPLYR
+whole_crime_dataset <- whole_crime_dataset %>%
+  mutate(OFNS_DESC = replace(OFNS_DESC, OFNS_DESC %in% c("OTHER STATE LAWS", 
+                                                        "OTHER STATE LAWS (NON PENAL LA", 
+                                                        "OTHER STATE LAWS (NON PENAL LAW)"), 
+                                          "OTHER STATE LAWS"))
+
+whole_crime_dataset <- whole_crime_dataset %>%
+  mutate(OFNS_DESC = replace(OFNS_DESC, OFNS_DESC %in% c("KIDNAPPING AND RELATED OFFENSES", 
+                                                        "KIDNAPPING & RELATED OFFENSES", 
+                                                        "KIDNAPPING"), 
+                                          "KIDNAPPING & RELATED OFFENSES"))
+
+
+whole_crime_dataset <- whole_crime_dataset %>%
+  mutate(OFNS_DESC = replace(OFNS_DESC, OFNS_DESC %in% c("INTOXICATED/IMPAIRED DRIVING", 
+                                                        "INTOXICATED & IMPAIRED DRIVING"), 
+                                          "INTOXICATED & IMPAIRED DRIVING"))
+
+whole_crime_dataset <- whole_crime_dataset %>%
+  mutate(OFNS_DESC = replace(OFNS_DESC, OFNS_DESC %in% c("ADMINISTRATIVE CODES", 
+                                                        "ADMINISTRATIVE CODE"), 
+                                          "ADMINISTRATIVE CODES"))
+
+
+unique(whole_crime_dataset$OFNS_DESC) #61
+
+ggplot() +
+  geom_bar(data = whole_crime_dataset, mapping = aes(y = OFNS_DESC))
+
+#count
+count(whole_crime_dataset)#1,040,954
+
+#count per crime type
+
+count_crime <- table(whole_crime_dataset$OFNS_DESC)
+classes_with_few_instances <- names(count_crime[count_crime <= 30])
+for (class in classes_with_few_instances) {
+  count <- count_crime[class]
+  cat(class, ":", count, "instances\n")
+}
+
+#classes with 30 or less instances a.k.a. verwaarloosbaar
+#ABORTION : 2 instances
+#ANTICIPATORY OFFENSES : 9 instances
+#DISRUPTION OF A RELIGIOUS SERV : 13 instances
+#ESCAPE 3 : 25 instances
+#FORTUNE TELLING : 1 instances
+#HOMICIDE-NEGLIGENT-VEHICLE : 7 instances
+#HOMICIDE-NEGLIGENT,UNCLASSIFIE : 8 instances
+#LOITERING : 2 instances
+#LOITERING FOR DRUG PURPOSES : 1 instances
+#LOITERING/GAMBLING (CARDS, DIC : 19 instances  --> e.g., 0.0018% instances of all instances (19/1,040,954)
+#NEW YORK CITY HEALTH CODE : 25 instances
+#NYS LAWS-UNCLASSIFIED VIOLATION : 6 instances
+#OTHER TRAFFIC INFRACTION : 3 instances
+#UNDER THE INFLUENCE OF DRUGS : 2 instances
+#UNLAWFUL POSS. WEAP. ON SCHOOL : 7 instances
+
+classes_with_many_instances <- names(count_crime[count_crime > 30])
+whole_crime_dataset <- subset(whole_crime_dataset, OFNS_DESC %in% classes_with_many_instances)
+
+unique(whole_crime_dataset$OFNS_DESC)
+count(whole_crime_dataset) #1,040,824
+table(whole_crime_dataset$OFNS_DESC)
+number_of_crimes2 <- length(unique(whole_crime_dataset$OFNS_DESC))
+number_of_crimes2 #46 classes of crime types
+
+ggplot() +
+  geom_bar(data = whole_crime_dataset, mapping = aes(y = OFNS_DESC))
+
+
+length(unique(whole_crime_dataset$PREM_TYP_DESC)) #70 types of location
+table(whole_crime_dataset$PREM_TYP_DESC)
+
+ggplot() +
+  geom_bar(data = whole_crime_dataset, mapping = aes(y = PREM_TYP_DESC))
+
+
+# Take a 10% sample from the crime_dataset to train the models with
+set.seed(123)
+crime_dataset <- whole_crime_dataset %>% 
+  sample_frac(0.1)
+
+# Print the dimensions of the sample dataset
+View(crime_dataset)
+table(crime_dataset$OFNS_DESC)
+length(unique(crime_dataset$OFNS_DESC)) #still 46!
+
+ggplot() +
+  geom_bar(data = crime_dataset, mapping = aes(y = OFNS_DESC))
+
+count_crime_sample <- table(crime_dataset$OFNS_DESC)
+classes_with_few_instances <- names(count_crime_sample[count_crime_sample <= 30])
+for (class in classes_with_few_instances) {
+  count <- count_crime_sample[class]
+  cat(class, ":", count, "instances\n")
+}
+
+classes_with_many_instances <- names(count_crime_sample[count_crime_sample > 30])
+crime_dataset <- subset(crime_dataset, OFNS_DESC %in% classes_with_many_instances)
+
+unique(crime_dataset$OFNS_DESC)
+count(crime_dataset) #103958
+table(crime_dataset$OFNS_DESC)
+number_of_crimes2 <- length(unique(crime_dataset$OFNS_DESC))
+number_of_crimes2  #36
+
+str(crime_dataset)
+
+__________________________________________________________________________________________
+
+#ENGINEERING NEW FEATURES: WEEKDAY, SEASON, TIME_OF_DAY, LOCATION_TYPE
+
+#Create new feature: WEEKDAY
+crime_dataset$WEEKDAY <- weekdays(as.Date(crime_dataset$CMPLNT_FR_DT, format = "%m/%d/%Y"))
+
+#Create new feature: SEASON
+crime_dataset$SEASON <- time2season(as.Date(crime_dataset$CMPLNT_FR_DT, format = "%m/%d/%Y"), out.fmt = "seasons")
+
+unique(crime_dataset$WEEKDAY)
+unique(crime_dataset$SEASON)
+
+#Create new feature: TIME_OF_DAY
+time_intervals <- cut(as.POSIXct(crime_dataset$CMPLNT_FR_TM, format = "%H:%M"), 
+                       breaks = c(as.POSIXct("00:00", format = "%H:%M"), 
+                                  as.POSIXct("01:00", format = "%H:%M"), 
+                                  as.POSIXct("02:00", format = "%H:%M"), 
+                                  as.POSIXct("03:00", format = "%H:%M"), 
+                                  as.POSIXct("04:00", format = "%H:%M"),
+                                  as.POSIXct("05:00", format = "%H:%M"), 
+                                  as.POSIXct("06:00", format = "%H:%M"), 
+                                  as.POSIXct("07:00", format = "%H:%M"), 
+                                  as.POSIXct("08:00", format = "%H:%M"), 
+                                  as.POSIXct("09:00", format = "%H:%M"),
+                                  as.POSIXct("10:00", format = "%H:%M"), 
+                                  as.POSIXct("11:00", format = "%H:%M"), 
+                                  as.POSIXct("12:00", format = "%H:%M"), 
+                                  as.POSIXct("13:00", format = "%H:%M"), 
+                                  as.POSIXct("14:00", format = "%H:%M"),
+                                  as.POSIXct("15:00", format = "%H:%M"), 
+                                  as.POSIXct("16:00", format = "%H:%M"), 
+                                  as.POSIXct("17:00", format = "%H:%M"), 
+                                  as.POSIXct("18:00", format = "%H:%M"), 
+                                  as.POSIXct("19:00", format = "%H:%M"),
+                                  as.POSIXct("20:00", format = "%H:%M"), 
+                                  as.POSIXct("21:00", format = "%H:%M"), 
+                                  as.POSIXct("22:00", format = "%H:%M"), 
+                                  as.POSIXct("23:00", format = "%H:%M"), 
+                                  as.POSIXct("24:00", format = "%H:%M")), 
+                       labels = c("00:00-01:00", "01:00-02:00", "02:00-03:00", "03:00-04:00",
+                                  "04:00-05:00", "05:00-06:00", "06:00-07:00", "07:00-08:00",
+                                  "08:00-09:00", "09:00-10:00", "00:10-11:00", "00:11-12:00",
+                                  "12:00-13:00", "13:00-14:00", "14:00-15:00", "15:00-16:00",
+                                  "16:00-17:00", "17:00-18:00", "18:00-19:00", "19:00-20:00",
+                                  "20:00-21:00", "21:00-22:00", "22:00-23:00", "23:00-24:00"))
+
+crime_dataset$TIME_OF_DAY <- time_intervals
+
+unique(crime_dataset$TIME_OF_DAY)
+View(crime_dataset)
+
+sum(crime_dataset$WEEKDAY == "")
+sum(crime_dataset$SEASON == "")
+sum(crime_dataset$TIME_OF_DAY == "")
+sum(crime_dataset$OFNS_DESC == "")
+sum(crime_dataset$BORO_NM == "")
+sum(crime_dataset$PREM_TYP_DESC == "")
+
+sum(is.nan(crime_dataset$OFNS_DESC))
+sum(is.nan(crime_dataset$PREM_TYP_DESC))
+sum(is.nan(crime_dataset$WEEKDAY))
+sum(is.nan(crime_dataset$SEASON))
+sum(is.nan(crime_dataset$TIME_OF_DAY))
+sum(is.nan(crime_dataset$BORO_NM))
+
+#Create new feature: LOCATION_TYPE
+crime_dataset$LOCATION_TYPE <- crime_dataset$PREM_TYP_DESC
+
+unique(crime_dataset$PREM_TYP_DESC) #70 classes --> we can clean this up
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("RESIDENCE-HOUSE", "RESIDENCE - APT. HOUSE", "RESIDENCE - PUBLIC HOUSING"), "RESIDENCE"))
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("OTHER", "STORE UNCLASSIFIED", "LOAN COMPANY", "CEMETERY"), "MISCELLANEOUS"))
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("TAXI (LIVERY LICENSED)", "TAXI (YELLOW LICENSED)", "TAXI/LIVERY (UNLICENSED)"), "TAXI"))
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("CHURCH", "SYNAGOGUE", "MOSQUE", "OTHER HOUSE OF WORSHIP"), "RELIGIOUS ESTABLISHMENTS"))
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("TRANSIT FACILITY (OTHER)", "TRAMWAY"), "TRANSIT FACILITY (OTHER)"))
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("BUS TERMINAL", "BUS STOP", "BUS (NYC TRANSIT)", "BUS (OTHER)"), "BUS"))
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("PHOTO/COPY", "VIDEO STORE", "TELECOMM. STORE"), "PHOTO/VIDEO/TELECOM"))
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("CLOTHING/BOUTIQUE", "SHOE"), "CLOTHING/SHOE"))
+
+crime_dataset <- crime_dataset %>%
+  mutate(LOCATION_TYPE = replace(LOCATION_TYPE, LOCATION_TYPE %in% c("DOCTOR/DENTIST OFFICE", "HOSPITAL"), "HEALTH FACILITY"))
+
+ggplot() +
+  geom_bar(data = crime_dataset, mapping = aes(y = LOCATION_TYPE))
+
+unique(crime_dataset$LOCATION_TYPE)
+length(unique(crime_dataset$LOCATION_TYPE)) #52
+table(crime_dataset$LOCATION_TYPE)
+
+#Create new feature: CRIME_TYPE
+
+ggplot() +
+  geom_bar(data = crime_dataset, mapping = aes(y = OFNS_DESC))
+
+length(unique(crime_dataset$OFNS_DESC))
+unique(crime_dataset$OFNS_DESC)
+
+crime_dataset$CRIME_TYPE <- NA
+
+#VIOLENT CRIMES
+crime_dataset <- crime_dataset %>%
+  mutate(CRIME_TYPE = replace(CRIME_TYPE, OFNS_DESC %in% c("FELONY ASSAULT", 
+                                                        "ASSAULT 3 & RELATED OFFENSES",
+                                                        "RAPE",
+                                                        "SEX CRIMES",
+                                                        "ROBBERY",
+                                                        "OFFENSES AGAINST THE PERSON",
+                                                        "OFFENSES RELATED TO CHILDREN"), 
+                                          "Violent crimes"))
+
+#PROPERTY CRIMES
+crime_dataset <- crime_dataset %>%
+  mutate(CRIME_TYPE = replace(CRIME_TYPE, OFNS_DESC %in% c("GRAND LARCENY",
+                                                        "PETIT LARCENY",
+                                                        "GRAND LARCENY OF MOTOR VEHICLE",
+                                                        "BURGLARY",
+                                                        "BURGLAR'S TOOLS",
+                                                        "CRIMINAL TRESPASS",
+                                                        "FRAUDULENT ACCOSTING",
+                                                        "POSSESSION OF STOLEN PROPERTY",
+                                                        "THEFT OF SERVICES",
+                                                        "THEFT-FRAUD",
+                                                        "OTHER OFFENSES RELATED TO THEF",
+                                                        "ARSON"), 
+                                          "Property crimes"))
+
+#DRUG & ALCOHOL CRIMES
+crime_dataset <- crime_dataset %>%
+  mutate(CRIME_TYPE = replace(CRIME_TYPE, OFNS_DESC %in% c("DANGEROUS DRUGS", 
+                                                        "INTOXICATED & IMPAIRED DRIVING"), 
+                                          "Drug & Alcohol related crimes"))
+
+#WEAPON CRIMES
+crime_dataset <- crime_dataset %>%
+  mutate(CRIME_TYPE = replace(CRIME_TYPE, OFNS_DESC %in% c("DANGEROUS WEAPONS"), 
+                                          "Weapon-related crimes"))
+
+#WHITE COLLAR CRIMES
+crime_dataset <- crime_dataset %>%
+  mutate(CRIME_TYPE = replace(CRIME_TYPE, OFNS_DESC %in% c("FORGERY", 
+                                                        "OFFENSES AGAINST PUBLIC ADMINI",
+                                                        "CRIMINAL MISCHIEF & RELATED OF",
+                                                        "OFFENSES INVOLVING FRAUD",
+                                                        "GAMBLING",
+                                                        "FRAUDS"), 
+                                          "White Collar crimes"))
+
+#PUBLIC ORDER CRIMES
+crime_dataset <- crime_dataset %>%
+  mutate(CRIME_TYPE = replace(CRIME_TYPE, OFNS_DESC %in% c("HARRASSMENT 2", 
+                                                        "OFF. AGNST PUB ORD SENSBLTY &"), 
+                                          "Public Order crimes"))
+
+#TRAFFIC VIOLATIONS
+crime_dataset <- crime_dataset %>%
+  mutate(CRIME_TYPE = replace(CRIME_TYPE, OFNS_DESC %in% c("VEHICLE AND TRAFFIC LAWS", 
+                                                        "UNAUTHORIZED USE OF A VEHICLE"), 
+                                          "Traffic Violations"))
+
+#MISCELLANEOUS CRIMES
+crime_dataset <- crime_dataset %>%
+  mutate(CRIME_TYPE = replace(CRIME_TYPE, OFNS_DESC %in% c("ADMINISTRATIVE CODES", 
+                                                        "MISCELLANEOUS PENAL LAW",
+                                                        "OTHER STATE LAWS", 
+                                                        "NYS LAWS-UNCLASSIFIED FELONY",
+                                                        "AGRICULTURE & MRKTS LAW-UNCLASSIFIED"), 
+                                          "Miscellaneous crimes"))
+
+unique(crime_dataset$CRIME_TYPE)
+#[1] "Public Order crimes"           "Property crimes"               "Drug & Alcohol related crimes"
+#[4] "White Collar crimes"           "Violent crimes"                "Traffic Violations"           
+#[7] "Miscellaneous crimes"          "Weapon-related crimes"  
+
+
+ggplot() +
+  geom_bar(data = crime_dataset, mapping = aes(y = CRIME_TYPE))
+
+table(crime_dataset$CRIME_TYPE)
+
+#OVERSAMPLING
+crime_dataset_over <- crime_dataset[, c("WEEKDAY", "SEASON", "TIME_OF_DAY",
+                                        "LOCATION_TYPE", "BORO_NM", 
+                                        "CRIME_TYPE")]
+View(crime_dataset_over)
+
+count_minority <- table(crime_dataset_over$CRIME_TYPE)
+classes_with_minority <- names(count_minority[count_minority < 10000])
+for (class in classes_with_minority) {
+  count <- count_minority[class]
+  cat(class, ":", count, "instances\n")
+}
+#Drug & Alcohol related crimes : 7209 instances
+#Miscellaneous crimes : 3410 instances
+#Traffic Violations : 1625 instances
+#Weapon-related crimes : 2216 instances
+
+
+crime_dataset_over$WEEKDAY <- factor(crime_dataset_over$WEEKDAY)
+crime_dataset_over$SEASON <- factor(crime_dataset_over$SEASON)
+crime_dataset_over$LOCATION_TYPE <- factor(crime_dataset_over$LOCATION_TYPE)
+crime_dataset_over$BORO_NM <- factor(crime_dataset_over$BORO_NM)
+crime_dataset_over$TIME_OF_DAY <- factor(crime_dataset_over$TIME_OF_DAY)
+crime_dataset_over$CRIME_TYPE <- factor(crime_dataset_over$CRIME_TYPE)
+
+#100838 instances
+
+set.seed(123)
+trn_index = createDataPartition(y = crime_dataset_over$CRIME_TYPE, p = 0.80, list = FALSE)
+train_set = crime_dataset_over[trn_index, ]
+test_set = crime_dataset_over[-trn_index, ]
+
+# create new data frame for oversampled training set
+set.seed(123)
+train_set_oversampled <- train_set
+
+ggplot() +
+  geom_bar(data = crime_dataset_oversampled, mapping = aes(y = CRIME_TYPE))
+
+
+classes_with_minority <- factor(classes_with_minority)
+
+#SMOTE
+set.seed(123)
+for (class in classes_with_minority) {
+    class_data_smote <- smote(CRIME_TYPE ~ ., train_set, perc.over = 2, k = 5)
+    train_set_oversampled <- rbind(train_set_oversampled, class_data_smote)
+}
+
+ggplot() +
+  geom_bar(data = train_set_oversampled, mapping = aes(y = CRIME_TYPE))
+
+
+table(train_set_oversampled$CRIME_TYPE)
+View(train_set_oversampled)
+
+ggplot() +
+  geom_bar(data = train_set_oversampled, mapping = aes(y = CRIME_TYPE))
+
+count(train_set_oversampled) #119,569
+
+#merge oversampled training set and test set together
+set.seed(123)
+final_crime_dataset <- rbind(train_set_oversampled, test_set)
+View(final_crime_dataset) #140,358
+
+#From here on working with these files in Python to train the models
+write.csv(train_set_oversampled, "train_set_oversampled.csv")
+write.csv(test_set, "test_set.csv")
+
+
+ggplot() +
+  geom_bar(data = crime_dataset_oversampled, mapping = aes(y = TIME_OF_DAY)) #meeste in afternoon
+ggplot() +
+  geom_bar(data = crime_dataset_oversampled, mapping = aes(y = WEEKDAY)) #meeste op vrijdag
+ggplot() +
+  geom_bar(data = crime_dataset_oversampled, mapping = aes(y = SEASON)) #meeste in autumn
+ggplot() +
+  geom_bar(data = crime_dataset_oversampled, mapping = aes(y = BORO_NM)) #meeste in brooklyn
+ggplot() +
+  geom_bar(data = crime_dataset_oversampled, mapping = aes(y = LOCATION_TYPE)) #meeste in residence
+
+I```
